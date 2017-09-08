@@ -1,4 +1,4 @@
-package: github.com/nielsole/slack-ignore-message
+package: github.com/flix-tech/slack-notify-mute
 import:
 - package: github.com/sirupsen/logrus
   version: ^1.0.3
