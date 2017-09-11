@@ -1,4 +1,4 @@
-package slack_ignore_message
+package slack_notify_mute
 
 import (
 	"net/url"
