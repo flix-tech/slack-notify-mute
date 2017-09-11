@@ -10,6 +10,7 @@ import (
 	"github.com/dgraph-io/badger"
 	"crypto/sha256"
 	"time"
+	"fmt"
 )
 
 type SlackMessageAttachmentField struct {
@@ -53,13 +54,17 @@ type SlackConfig struct {
 
 func sendMessageToSlack(message Message, config SlackConfig) error {
 	messageBytes, _ := json.Marshal(message.Key)
+	shortKey, err := shortenKey(message)
+	if err != nil {
+		log.Fatal(err)
+	}
 	slackMessage := SlackMessage{
 		Text: string(message.Message),
 		Attachments: []SlackMessageAttachment{
 			{
 				Title: "You will be periodically reminded of this vulnerability.",
 				Fallback: "Unable to mute",
-				CallbackId: string(messageBytes),
+				CallbackId: string(messageBytes[:]),
 				Color: "#3AA3E3",
 				AttachmentType: "default",
 				Actions: []SlackMessageAttachmentAction{
@@ -67,7 +72,7 @@ func sendMessageToSlack(message Message, config SlackConfig) error {
 						Name: "mute",
 						Text: "Mute",
 						Type: "button",
-						Value: "true",
+						Value: string(shortKey[:]),
 					},
 				},
 			},
@@ -85,7 +90,7 @@ func sendMessageToSlack(message Message, config SlackConfig) error {
 		return err
 	}
 	respBodyBytes, err := ioutil.ReadAll(resp.Body)
-	log.Warn("Response from Slack: " + string(respBodyBytes))
+	log.Warn("Response from Slack: " + string(respBodyBytes[:]))
 	defer resp.Body.Close()
 	return nil
 }
@@ -166,11 +171,37 @@ func setSnooze(message Message, duration time.Duration) error {
 	}
 	return nil
 }
-func setMute(message Message) error {
-	key, _ := shortenKey(message)
-	err := Kv.Set(key, []byte("y"), 0x00)
+func setMute(shortKey []byte) error {
+	err := Kv.Set(shortKey, []byte("y"), 0x00)
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+
+func handler(w http.ResponseWriter, r *http.Request) {
+	requestObject := make(map[string]interface{})
+	bodyBytes, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+	if err := json.Unmarshal(bodyBytes, requestObject); err != nil {
+		log.Error(err)
+		return
+	}
+	defer r.Body.Close()
+	for _, action := range requestObject["actions"].([]map[string]string) {
+		if action["name"] == "mute" {
+			setMute([]byte(action["value"]))
+		}
+	}
+
+	fmt.Fprintf(w, "Request executed")
+}
+
+func StartServer() {
+	http.HandleFunc("/", handler)
+	http.ListenAndServe(":8080", nil)
 }
