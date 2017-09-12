@@ -6,6 +6,7 @@ import (
 	"os"
 	"github.com/dgraph-io/badger"
 	"time"
+	"github.com/sirupsen/logrus"
 )
 
 var badgerPrefix string = "test"

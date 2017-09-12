@@ -230,7 +230,7 @@ func createHandler(kv *badger.KV) func(w http.ResponseWriter, r *http.Request){
 		defer r.Body.Close()
 		if err != nil {
 			w.WriteHeader(400)
-			log.Fatal(err)
+			return
 		}
 		for _, action := range requestObject.Actions {
 			if action.Name == "mute" {
@@ -246,6 +246,7 @@ func createHandler(kv *badger.KV) func(w http.ResponseWriter, r *http.Request){
 
 func StartServer() {
 	kv, err := GetKV(&badger.DefaultOptions,"badger")
+	log.AddHook(ContextHook{})
 	if err != nil {
 		log.Fatal(err)
 	}
