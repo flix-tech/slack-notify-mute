@@ -75,7 +75,10 @@ func sendMessageToSlack(message *Message, config SlackConfig) error {
 }
 
 func prepareRequest(message *Message) ([]byte, error) {
-	messageBytes, _ := json.Marshal(message.Key)
+	messageBytes, err := json.Marshal(message.Key)
+	if err != nil{
+		return nil, err
+	}
 	shortKey, err := shortenKey(message)
 	if err != nil {
 		log.Fatal(err)
@@ -214,6 +217,7 @@ func parseWebhookBody(body io.ReadCloser) (*WebhookBody, error) {
 		return nil, err
 	}
 	if err := json.Unmarshal(bodyBytes, requestObject); err != nil {
+		log.Print(string(bodyBytes))
 		log.Error(err)
 		return nil, err
 	}
