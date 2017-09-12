@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"time"
 	"fmt"
+	"io"
 )
 
 type SlackMessageAttachmentField struct {
@@ -52,36 +53,14 @@ type SlackConfig struct {
 }
 
 
-func sendMessageToSlack(message Message, config SlackConfig) error {
-	messageBytes, _ := json.Marshal(message.Key)
-	shortKey, err := shortenKey(message)
+func sendMessageToSlack(message *Message, config SlackConfig) error {
+	bodyBytes, err := prepareRequest(message)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	slackMessage := SlackMessage{
-		Text: string(message.Message),
-		Attachments: []SlackMessageAttachment{
-			{
-				Title: "You will be periodically reminded of this vulnerability.",
-				Fallback: "Unable to mute",
-				CallbackId: string(messageBytes[:]),
-				Color: "#3AA3E3",
-				AttachmentType: "default",
-				Actions: []SlackMessageAttachmentAction{
-					{
-						Name: "mute",
-						Text: "Mute",
-						Type: "button",
-						Value: string(shortKey[:]),
-					},
-				},
-			},
-		},
-	}
-	bodyBytes, _ := json.Marshal(&slackMessage)
 	client := &http.Client{}
 	req, err := http.NewRequest("POST", config.Url.String(), bytes.NewReader(bodyBytes))
-	if err != nil{
+	if err != nil {
 		return err
 	}
 	req.Header.Add("Content-type", "application/json")
@@ -95,8 +74,43 @@ func sendMessageToSlack(message Message, config SlackConfig) error {
 	return nil
 }
 
-func SendMessage(message Message, config SlackConfig) (bool, error) {
-	if shouldSend, err := checkShouldSend(message,Kv); err == nil && !shouldSend {
+func prepareRequest(message *Message) ([]byte, error) {
+	messageBytes, _ := json.Marshal(message.Key)
+	shortKey, err := shortenKey(message)
+	if err != nil {
+		log.Fatal(err)
+		return nil, err
+	}
+	slackMessage := SlackMessage{
+		Text: string(message.Message),
+		Attachments: []SlackMessageAttachment{
+			{
+				Title:          "You will be periodically reminded of this vulnerability.",
+				Fallback:       "Unable to mute",
+				CallbackId:     string(messageBytes[:]),
+				Color:          "#3AA3E3",
+				AttachmentType: "default",
+				Actions: []SlackMessageAttachmentAction{
+					{
+						Name:  "mute",
+						Text:  "Mute",
+						Type:  "button",
+						Value: string(shortKey[:]),
+					},
+				},
+			},
+		},
+	}
+	bodyBytes, _ := json.Marshal(&slackMessage)
+	return bodyBytes, nil
+}
+
+func SendMessage(message *Message, config SlackConfig) (bool, error) {
+	kv, err := GetKV(&badger.DefaultOptions, "badger")
+	if err != nil {
+		return false, err
+	}
+	if shouldSend, err := checkShouldSend(message,kv); err == nil && !shouldSend {
 		return false, nil
 	}else if err != nil {
 		return false, err
@@ -104,12 +118,16 @@ func SendMessage(message Message, config SlackConfig) (bool, error) {
 	if err := sendMessageToSlack(message, config); err != nil {
 		return false, err
 	}
-	setSnooze(message, config.DefaultSnooze)
+	shortMessage, err:= shortenKey(message)
+	if err != nil {
+		return false, err
+	}
+	setSnooze(shortMessage, kv, config.DefaultSnooze)
 	return true, nil
 }
 
 
-func shortenKey(message Message) ([]byte, error) {
+func shortenKey(message *Message) ([]byte, error) {
 	keyBytes, err := json.Marshal(message.Key)
 	if err != nil {
 		return nil, err
@@ -118,22 +136,28 @@ func shortenKey(message Message) ([]byte, error) {
 	return keyBytesShort[:], nil
 }
 
-var Kv *badger.KV = GetKV(&badger.DefaultOptions)
 
-func GetKV(opt *badger.Options) *badger.KV {
+// is written to, when starting the server
+
+func GetKV(opt *badger.Options, prefix string) (*badger.KV, error) {
 	if opt == nil {
 		opt = &badger.DefaultOptions
 	}
 
-	dir, _ := ioutil.TempDir("", "badger")
+	dir, err := ioutil.TempDir("", prefix)
+	if err != nil {
+		return nil, err
+	}
 	opt.Dir = dir
 	opt.ValueDir = dir
-	// TODO Error handling
-	kv, _ := badger.NewKV(opt)
-	return kv
+	if kv, err := badger.NewKV(opt); err != nil {
+		return nil, err
+	}else{
+		return kv, nil
+	}
 }
 
-func checkShouldSend(message Message, kv *badger.KV) (bool, error) {
+func checkShouldSend(message *Message, kv *badger.KV) (bool, error) {
 	keyBytesFixed, err := shortenKey(message)
 	if err != nil {
 		return false, err
@@ -159,49 +183,68 @@ func checkShouldSend(message Message, kv *badger.KV) (bool, error) {
 	}
 }
 
-func setSnooze(message Message, duration time.Duration) error {
-	key, _ := shortenKey(message)
+func setSnooze(shortKey []byte, kv *badger.KV, duration time.Duration) error {
 	timeStamp, err := time.Now().Add(duration).GobEncode()
 	if err != nil {
 		return err
 	}
-	err = Kv.Set(key, timeStamp, 0x01)
+	err = kv.Set(shortKey, timeStamp, 0x01)
 	if err != nil {
 		return err
 	}
 	return nil
 }
-func setMute(shortKey []byte) error {
-	err := Kv.Set(shortKey, []byte("y"), 0x00)
+func setMute(shortKey []byte, kv *badger.KV) error {
+	err := kv.Set(shortKey, []byte("y"), 0x00)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
+type WebhookBody struct {
+	Actions [] SlackMessageAttachmentAction `json:"actions"`
+}
 
-func handler(w http.ResponseWriter, r *http.Request) {
-	requestObject := make(map[string]interface{})
-	bodyBytes, err := ioutil.ReadAll(r.Body)
+func parseWebhookBody(body io.ReadCloser) (*WebhookBody, error) {
+	bodyBytes, err := ioutil.ReadAll(body)
+	requestObject := &WebhookBody{}
 	if err != nil {
 		log.Error(err)
-		return
+		return nil, err
 	}
 	if err := json.Unmarshal(bodyBytes, requestObject); err != nil {
 		log.Error(err)
-		return
+		return nil, err
 	}
-	defer r.Body.Close()
-	for _, action := range requestObject["actions"].([]map[string]string) {
-		if action["name"] == "mute" {
-			setMute([]byte(action["value"]))
-		}
-	}
+	return requestObject, nil
+}
 
-	fmt.Fprintf(w, "Request executed")
+func createHandler(kv *badger.KV) func(w http.ResponseWriter, r *http.Request){
+	return func (w http.ResponseWriter, r *http.Request) {
+		requestObject, err := parseWebhookBody(r.Body)
+		defer r.Body.Close()
+		if err != nil {
+			w.WriteHeader(400)
+			log.Fatal(err)
+		}
+		for _, action := range requestObject.Actions {
+			if action.Name == "mute" {
+				setMute([]byte(action.Value), kv)
+			}else if action.Name == "snooze" {
+				setSnooze([]byte(action.Value), kv, 30*24*time.Hour)
+			}
+		}
+
+		fmt.Fprintf(w, "Request executed")
+	}
 }
 
 func StartServer() {
-	http.HandleFunc("/", handler)
+	kv, err := GetKV(&badger.DefaultOptions,"badger")
+	if err != nil {
+		log.Fatal(err)
+	}
+	http.HandleFunc("/", createHandler(kv))
 	http.ListenAndServe(":8080", nil)
 }
