@@ -6,10 +6,10 @@ import (
 	"os"
 	"github.com/dgraph-io/badger"
 	"time"
-	"github.com/sirupsen/logrus"
+	"net/http/httptest"
 )
 
-var badgerPrefix string = "test"
+var testBadgerPrefix string = "test"
 
 func TestPrepareRequest(t *testing.T) {
 	message := &Message{
@@ -55,7 +55,7 @@ func TestParseWebhookBody(t *testing.T) {
 }
 
 func TestMessageNotSent(t *testing.T) {
-	kv, err := GetKV(&badger.DefaultOptions, badgerPrefix)
+	kv, err := GetKV(&badger.DefaultOptions, testBadgerPrefix)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestMessageNotSent(t *testing.T) {
 }
 
 func TestMessageWasSnoozed(t *testing.T) {
-	kv, err := GetKV(&badger.DefaultOptions, badgerPrefix)
+	kv, err := GetKV(&badger.DefaultOptions, testBadgerPrefix)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestMessageWasSnoozed(t *testing.T) {
 }
 
 func TestMessageWasMuted(t *testing.T) {
-	kv, err := GetKV(&badger.DefaultOptions, badgerPrefix)
+	kv, err := GetKV(&badger.DefaultOptions, testBadgerPrefix)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,5 +117,24 @@ func TestMessageWasMuted(t *testing.T) {
 		t.Fatal(err)
 	}else if shouldSend{
 		t.Fatal("Expected to not send message")
+	}
+}
+
+func TestHandler(t *testing.T) {
+	kv, err := GetKV(&badger.DefaultOptions, testBadgerPrefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Open("samplewebhook.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := createHandler(kv)
+	request := httptest.NewRequest("POST", "/", file)
+	w := httptest.NewRecorder()
+	handler(w, request)
+	resp := w.Result()
+	if resp.StatusCode != 200 {
+		t.Error("Unexpected status code: " + string(resp.StatusCode))
 	}
 }

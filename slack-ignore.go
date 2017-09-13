@@ -246,7 +246,6 @@ func createHandler(kv *badger.KV) func(w http.ResponseWriter, r *http.Request){
 
 func StartServer() {
 	kv, err := GetKV(&badger.DefaultOptions,"badger")
-	log.AddHook(ContextHook{})
 	if err != nil {
 		log.Fatal(err)
 	}
