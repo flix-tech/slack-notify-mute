@@ -100,6 +100,12 @@ func prepareRequest(message *Message) ([]byte, error) {
 						Type:  "button",
 						Value: string(shortKey[:]),
 					},
+					{
+						Name:  "snooze",
+						Text:  "Snooze",
+						Type:  "button",
+						Value: string(shortKey[:]),
+					},
 				},
 			},
 		},
