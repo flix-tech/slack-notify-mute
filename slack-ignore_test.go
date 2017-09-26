@@ -7,6 +7,7 @@ import (
 	"github.com/dgraph-io/badger"
 	"time"
 	"net/http/httptest"
+	"strconv"
 )
 
 var testBadgerPrefix string = "test"
@@ -41,11 +42,13 @@ func TestShortenKey(t *testing.T) {
 }
 
 func TestParseWebhookBody(t *testing.T) {
-	file, err := os.Open("samplewebhook.json")
+	file, err := os.Open("test_resources/samplerequest.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
-	webhookBody, err := parseWebhookBody(file)
+	request := httptest.NewRequest("POST", "/", file)
+	request.Header["Content-Type"] = []string{"application/x-www-form-urlencoded"}
+	webhookBody, err := parseWebhook(request)
 	if err != nil{
 		t.Fatal(err)
 	}
@@ -125,16 +128,17 @@ func TestHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	file, err := os.Open("samplewebhook.json")
+	file, err := os.Open("test_resources/samplerequest.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
 	handler := createHandler(kv)
 	request := httptest.NewRequest("POST", "/", file)
+	request.Header["Content-Type"] = []string{"application/x-www-form-urlencoded"}
 	w := httptest.NewRecorder()
 	handler(w, request)
 	resp := w.Result()
 	if resp.StatusCode != 200 {
-		t.Error("Unexpected status code: " + string(resp.StatusCode))
+		t.Error("Unexpected status code: " + strconv.Itoa(resp.StatusCode))
 	}
 }

@@ -11,7 +11,7 @@ import (
 	"crypto/sha256"
 	"time"
 	"fmt"
-	"io"
+	"errors"
 )
 
 type SlackMessageAttachmentField struct {
@@ -215,8 +215,16 @@ type WebhookBody struct {
 	Actions [] SlackMessageAttachmentAction `json:"actions"`
 }
 
-func parseWebhookBody(body io.ReadCloser) (*WebhookBody, error) {
-	bodyBytes, err := ioutil.ReadAll(body)
+func parseWebhook(r *http.Request) (*WebhookBody, error) {
+	err := r.ParseForm()
+	if err != nil {
+		return nil, err
+	}
+	if len(r.Form["payload"]) == 0 {
+		return nil, errors.New("No payload in body")
+	}
+	payloadString := r.Form["payload"][0]
+	bodyBytes := []byte(payloadString)
 	requestObject := &WebhookBody{}
 	if err != nil {
 		log.Error(err)
@@ -232,7 +240,7 @@ func parseWebhookBody(body io.ReadCloser) (*WebhookBody, error) {
 
 func createHandler(kv *badger.KV) func(w http.ResponseWriter, r *http.Request){
 	return func (w http.ResponseWriter, r *http.Request) {
-		requestObject, err := parseWebhookBody(r.Body)
+		requestObject, err := parseWebhook(r)
 		defer r.Body.Close()
 		if err != nil {
 			w.WriteHeader(400)
