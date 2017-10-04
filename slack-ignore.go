@@ -12,6 +12,8 @@ import (
 	"time"
 	"fmt"
 	"errors"
+	"os"
+	"sync"
 )
 
 type SlackMessageAttachmentField struct {
@@ -50,8 +52,10 @@ type Message struct {
 type SlackConfig struct {
 	Url *url.URL
 	DefaultSnooze time.Duration
+	DataDir string
 }
 
+var lock *sync.Mutex
 
 func sendMessageToSlack(message *Message, config SlackConfig) error {
 	bodyBytes, err := prepareRequest(message)
@@ -115,7 +119,12 @@ func prepareRequest(message *Message) ([]byte, error) {
 }
 
 func SendMessage(message *Message, config SlackConfig) (bool, error) {
-	kv, err := GetKV(&badger.DefaultOptions, "badger")
+	if lock == nil {
+		lock = &sync.Mutex{}
+	}
+	lock.Lock()
+	defer lock.Unlock()
+	kv, err := GetKV(&badger.DefaultOptions, config.DataDir)
 	if err != nil {
 		return false, err
 	}
@@ -148,17 +157,15 @@ func shortenKey(message *Message) ([]byte, error) {
 
 // is written to, when starting the server
 
-func GetKV(opt *badger.Options, prefix string) (*badger.KV, error) {
+func GetKV(opt *badger.Options, path string) (*badger.KV, error) {
 	if opt == nil {
 		opt = &badger.DefaultOptions
 	}
-
-	dir, err := ioutil.TempDir("", prefix)
-	if err != nil {
+	if err := os.MkdirAll(path, os.ModePerm); err != nil {
 		return nil, err
 	}
-	opt.Dir = dir
-	opt.ValueDir = dir
+	opt.Dir = path
+	opt.ValueDir = path
 	if kv, err := badger.NewKV(opt); err != nil {
 		return nil, err
 	}else{

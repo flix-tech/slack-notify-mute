@@ -8,6 +8,7 @@ import (
 	"time"
 	"net/http/httptest"
 	"strconv"
+	"io/ioutil"
 )
 
 var testBadgerPrefix string = "test"
@@ -43,6 +44,7 @@ func TestShortenKey(t *testing.T) {
 
 func TestParseWebhookBody(t *testing.T) {
 	file, err := os.Open("test_resources/samplerequest.txt")
+	defer file.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +60,9 @@ func TestParseWebhookBody(t *testing.T) {
 }
 
 func TestMessageNotSent(t *testing.T) {
-	kv, err := GetKV(&badger.DefaultOptions, testBadgerPrefix)
+	tempDir,_ := ioutil.TempDir("", testBadgerPrefix)
+	kv, err := GetKV(&badger.DefaultOptions, tempDir)
+	defer kv.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +78,9 @@ func TestMessageNotSent(t *testing.T) {
 }
 
 func TestMessageWasSnoozed(t *testing.T) {
-	kv, err := GetKV(&badger.DefaultOptions, testBadgerPrefix)
+	tempDir,_ := ioutil.TempDir("", testBadgerPrefix)
+	kv, err := GetKV(&badger.DefaultOptions, tempDir)
+	defer kv.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +107,9 @@ func TestMessageWasSnoozed(t *testing.T) {
 }
 
 func TestMessageWasMuted(t *testing.T) {
-	kv, err := GetKV(&badger.DefaultOptions, testBadgerPrefix)
+	tempDir,_ := ioutil.TempDir("", testBadgerPrefix)
+	kv, err := GetKV(&badger.DefaultOptions, tempDir)
+	defer kv.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +132,9 @@ func TestMessageWasMuted(t *testing.T) {
 }
 
 func TestHandler(t *testing.T) {
-	kv, err := GetKV(&badger.DefaultOptions, testBadgerPrefix)
+	tempDir,_ := ioutil.TempDir("", testBadgerPrefix)
+	kv, err := GetKV(&badger.DefaultOptions, tempDir)
+	defer kv.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
