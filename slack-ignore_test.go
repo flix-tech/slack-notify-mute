@@ -1,14 +1,14 @@
 package slack_notify_mute
 
 import (
-	"testing"
 	"encoding/hex"
-	"os"
 	"github.com/dgraph-io/badger"
-	"time"
-	"net/http/httptest"
-	"strconv"
 	"io/ioutil"
+	"net/http/httptest"
+	"os"
+	"strconv"
+	"testing"
+	"time"
 )
 
 var testBadgerPrefix string = "test"
@@ -16,7 +16,7 @@ var testBadgerPrefix string = "test"
 func TestPrepareRequest(t *testing.T) {
 	message := &Message{
 		Message: []byte("Foo"),
-		Key: "Foo",
+		Key:     "Foo",
 	}
 	requestBytes, err := prepareRequest(message)
 	if err != nil {
@@ -28,9 +28,9 @@ func TestPrepareRequest(t *testing.T) {
 }
 
 func TestShortenKey(t *testing.T) {
-	message:= &Message{
+	message := &Message{
 		Message: []byte("Foo"),
-		Key: "Bar",
+		Key:     "Bar",
 	}
 	shortKey, err := shortenKey(message)
 	if err != nil {
@@ -51,7 +51,7 @@ func TestParseWebhookBody(t *testing.T) {
 	request := httptest.NewRequest("POST", "/", file)
 	request.Header["Content-Type"] = []string{"application/x-www-form-urlencoded"}
 	webhookBody, err := parseWebhook(request)
-	if err != nil{
+	if err != nil {
 		t.Fatal(err)
 	}
 	if len(webhookBody.Actions) != 1 {
@@ -60,79 +60,79 @@ func TestParseWebhookBody(t *testing.T) {
 }
 
 func TestMessageNotSent(t *testing.T) {
-	tempDir,_ := ioutil.TempDir("", testBadgerPrefix)
+	tempDir, _ := ioutil.TempDir("", testBadgerPrefix)
 	kv, err := GetKV(&badger.DefaultOptions, tempDir)
 	defer kv.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
-	message:= &Message{
+	message := &Message{
 		Message: []byte("Foo"),
-		Key: "Bar",
+		Key:     "Bar",
 	}
-	if shouldSend, err := checkShouldSend(message, kv); err != nil{
+	if shouldSend, err := checkShouldSend(message, kv); err != nil {
 		t.Fatal(err)
-	}else if !shouldSend{
+	} else if !shouldSend {
 		t.Fatal("Expected to send message")
 	}
 }
 
 func TestMessageWasSnoozed(t *testing.T) {
-	tempDir,_ := ioutil.TempDir("", testBadgerPrefix)
+	tempDir, _ := ioutil.TempDir("", testBadgerPrefix)
 	kv, err := GetKV(&badger.DefaultOptions, tempDir)
 	defer kv.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
-	message:= &Message{
+	message := &Message{
 		Message: []byte("Foo"),
-		Key: "Bar",
+		Key:     "Bar",
 	}
 	if shortKey, err := shortenKey(message); err != nil {
 		t.Fatal(err)
-	}else{
-		setSnooze(shortKey,kv, 1* time.Second)
+	} else {
+		setSnooze(shortKey, kv, 1*time.Second)
 	}
-	if shouldSend, err := checkShouldSend(message, kv); err != nil{
+	if shouldSend, err := checkShouldSend(message, kv); err != nil {
 		t.Fatal(err)
-	}else if shouldSend{
+	} else if shouldSend {
 		t.Fatal("Expected to not send message")
 	}
 	time.Sleep(2 * time.Second)
-	if shouldSend, err := checkShouldSend(message, kv); err != nil{
+	if shouldSend, err := checkShouldSend(message, kv); err != nil {
 		t.Fatal(err)
-	}else if !shouldSend{
+	} else if !shouldSend {
 		t.Fatal("Expected to send message")
 	}
 }
 
 func TestMessageWasMuted(t *testing.T) {
-	tempDir,_ := ioutil.TempDir("", testBadgerPrefix)
+	tempDir, _ := ioutil.TempDir("", testBadgerPrefix)
 	kv, err := GetKV(&badger.DefaultOptions, tempDir)
 	defer kv.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
-	message:= &Message{
+	message := &Message{
 		Message: []byte("Foo"),
-		Key: "Bar",
+		Key:     "Bar",
 	}
 	shortKey, _ := shortenKey(message)
-	if shouldSend, err := checkShouldSend(message, kv); err != nil{
+	if shouldSend, err := checkShouldSend(message, kv); err != nil {
 		t.Fatal(err)
-	}else if !shouldSend{
+	} else if !shouldSend {
 		t.Fatal("Expected to send message")
 	}
-	setMute(shortKey,kv)
-	if shouldSend, err := checkShouldSend(message, kv); err != nil{
+	setMute(shortKey, kv)
+	if shouldSend, err := checkShouldSend(message, kv); err != nil {
 		t.Fatal(err)
-	}else if shouldSend{
+	} else if shouldSend {
 		t.Fatal("Expected to not send message")
 	}
 }
 
 func TestHandler(t *testing.T) {
-	tempDir,_ := ioutil.TempDir("", testBadgerPrefix)
+	tempDir, _ := ioutil.TempDir("", testBadgerPrefix)
 	kv, err := GetKV(&badger.DefaultOptions, tempDir)
 	defer kv.Close()
 	if err != nil {

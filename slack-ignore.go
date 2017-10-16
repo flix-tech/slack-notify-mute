@@ -1,58 +1,58 @@
 package slack_notify_mute
 
 import (
-	"net/url"
 	"bytes"
+	"crypto/sha256"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/dgraph-io/badger"
+	log "github.com/sirupsen/logrus"
 	"io/ioutil"
 	"net/http"
-	log "github.com/sirupsen/logrus"
-	"encoding/json"
-	"github.com/dgraph-io/badger"
-	"crypto/sha256"
-	"time"
-	"fmt"
-	"errors"
+	"net/url"
 	"os"
 	"sync"
+	"time"
 )
 
 type SlackMessageAttachmentField struct {
 	Title string `json:"title"`
 	Value string `json:"value"`
-	Short bool `json:"short"`
+	Short bool   `json:"short"`
 }
 
 type SlackMessageAttachmentAction struct {
-	Name string `json:"name"`
-	Text string `json:"text"`
-	Type string `json:"type"`
+	Name  string `json:"name"`
+	Text  string `json:"text"`
+	Type  string `json:"type"`
 	Value string `json:"value"`
 }
 
 type SlackMessageAttachment struct {
-	Title string `json:"title,omitempty"`
-	Fields []SlackMessageAttachmentField `json:"fields,omitempty"`
-	Fallback string `json:"fallback"`
-	CallbackId string `json:"callback_id"`
-	Color string `json:"color"`
-	AttachmentType string `json:"attachment_type"`
-	Actions []SlackMessageAttachmentAction `json:"actions"`
+	Title          string                         `json:"title,omitempty"`
+	Fields         []SlackMessageAttachmentField  `json:"fields,omitempty"`
+	Fallback       string                         `json:"fallback"`
+	CallbackId     string                         `json:"callback_id"`
+	Color          string                         `json:"color"`
+	AttachmentType string                         `json:"attachment_type"`
+	Actions        []SlackMessageAttachmentAction `json:"actions"`
 }
 
 type SlackMessage struct {
-	Text        string `json:"text"`
+	Text        string                   `json:"text"`
 	Attachments []SlackMessageAttachment `json:"attachments"`
 }
 
 type Message struct {
-	Key interface{}
+	Key     interface{}
 	Message []byte
 }
 
 type SlackConfig struct {
-	Url *url.URL
+	Url           *url.URL
 	DefaultSnooze time.Duration
-	DataDir string
+	DataDir       string
 }
 
 var lock *sync.Mutex
@@ -80,7 +80,7 @@ func sendMessageToSlack(message *Message, config SlackConfig) error {
 
 func prepareRequest(message *Message) ([]byte, error) {
 	messageBytes, err := json.Marshal(message.Key)
-	if err != nil{
+	if err != nil {
 		return nil, err
 	}
 	shortKey, err := shortenKey(message)
@@ -128,22 +128,21 @@ func SendMessage(message *Message, config SlackConfig) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if shouldSend, err := checkShouldSend(message,kv); err == nil && !shouldSend {
+	if shouldSend, err := checkShouldSend(message, kv); err == nil && !shouldSend {
 		return false, nil
-	}else if err != nil {
+	} else if err != nil {
 		return false, err
 	}
 	if err := sendMessageToSlack(message, config); err != nil {
 		return false, err
 	}
-	shortMessage, err:= shortenKey(message)
+	shortMessage, err := shortenKey(message)
 	if err != nil {
 		return false, err
 	}
 	setSnooze(shortMessage, kv, config.DefaultSnooze)
 	return true, nil
 }
-
 
 func shortenKey(message *Message) ([]byte, error) {
 	keyBytes, err := json.Marshal(message.Key)
@@ -153,7 +152,6 @@ func shortenKey(message *Message) ([]byte, error) {
 	keyBytesShort := sha256.Sum256(keyBytes)
 	return keyBytesShort[:], nil
 }
-
 
 // is written to, when starting the server
 
@@ -168,7 +166,7 @@ func GetKV(opt *badger.Options, path string) (*badger.KV, error) {
 	opt.ValueDir = path
 	if kv, err := badger.NewKV(opt); err != nil {
 		return nil, err
-	}else{
+	} else {
 		return kv, nil
 	}
 }
@@ -178,7 +176,6 @@ func checkShouldSend(message *Message, kv *badger.KV) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-
 
 	var item badger.KVItem
 	if err := kv.Get(keyBytesFixed[:], &item); err != nil {
@@ -194,7 +191,7 @@ func checkShouldSend(message *Message, kv *badger.KV) (bool, error) {
 			return false, err
 		}
 		return time.Now().After(timePoint), nil
-	}else {
+	} else {
 		return false, nil
 	}
 }
@@ -219,7 +216,7 @@ func setMute(shortKey []byte, kv *badger.KV) error {
 }
 
 type WebhookBody struct {
-	Actions [] SlackMessageAttachmentAction `json:"actions"`
+	Actions []SlackMessageAttachmentAction `json:"actions"`
 }
 
 func parseWebhook(r *http.Request) (*WebhookBody, error) {
@@ -245,8 +242,8 @@ func parseWebhook(r *http.Request) (*WebhookBody, error) {
 	return requestObject, nil
 }
 
-func createHandler(kv *badger.KV) func(w http.ResponseWriter, r *http.Request){
-	return func (w http.ResponseWriter, r *http.Request) {
+func createHandler(kv *badger.KV) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
 		requestObject, err := parseWebhook(r)
 		defer r.Body.Close()
 		if err != nil {
@@ -256,7 +253,7 @@ func createHandler(kv *badger.KV) func(w http.ResponseWriter, r *http.Request){
 		for _, action := range requestObject.Actions {
 			if action.Name == "mute" {
 				setMute([]byte(action.Value), kv)
-			}else if action.Name == "snooze" {
+			} else if action.Name == "snooze" {
 				setSnooze([]byte(action.Value), kv, 30*24*time.Hour)
 			}
 		}
@@ -266,7 +263,7 @@ func createHandler(kv *badger.KV) func(w http.ResponseWriter, r *http.Request){
 }
 
 func StartServer() {
-	kv, err := GetKV(&badger.DefaultOptions,"badger")
+	kv, err := GetKV(&badger.DefaultOptions, "badger")
 	if err != nil {
 		log.Fatal(err)
 	}
